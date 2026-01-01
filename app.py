@@ -7,6 +7,7 @@ import difflib
 import threading
 import time
 import logging
+import subprocess
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
@@ -465,23 +466,161 @@ def settle_parlays_once(limit: int = 100) -> int:
 
 
 # ----------------------------
-# Odds API -> EventResult fetcher (the missing piece for settlement)
+# Public scoreboard API (no key required) -> EventResult fetcher
 # ----------------------------
-ODDS_API_KEY = os.environ.get("ODDS_API_KEY", "").strip()
+ESPN_SCOREBOARD_BASE = "https://site.api.espn.com/apis/v2/sports"
 
-LEAGUE_TO_SPORT_KEY = {
-    "NBA": "basketball_nba",
-    "NFL": "americanfootball_nfl",
+LEAGUE_TO_ESPN_PATH = {
+    "NBA": ("basketball", "nba"),
+    "NFL": ("football", "nfl"),
 }
 
-def fetch_scores_from_odds_api(sport_key: str, days_from: int = 3) -> list[dict]:
-    if not ODDS_API_KEY:
+def _parse_utc_datetime(val):
+    try:
+        if val is None:
+            return None
+        if isinstance(val, datetime):
+            dt = val
+        else:
+            s = str(val)
+            if s.endswith("Z"):
+                s = s[:-1] + "+00:00"
+            dt = datetime.fromisoformat(s)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        else:
+            dt = dt.astimezone(timezone.utc)
+        return dt
+    except Exception:
+        return None
+
+def _event_lookup_for_league(league: str, event_ids: list[str]):
+    games = load_data()
+    if games is None or getattr(games, "empty", True):
+        return {}
+
+    df = games[games.get("league") == league] if hasattr(games, "get") else games
+    try:
+        df = games[games["league"] == league]
+    except Exception:
+        pass
+
+    if event_ids:
+        try:
+            df = df[df["event_id"].isin(event_ids)]
+        except Exception:
+            pass
+
+    lookup = {}
+    for _, row in (df.iterrows() if hasattr(df, "iterrows") else []):
+        try:
+            eid = str(row.get("event_id"))
+        except Exception:
+            eid = str(row["event_id"])
+        if not eid:
+            continue
+        home_team = str(row.get("home_team", "") or "").strip()
+        away_team = str(row.get("away_team", "") or "").strip()
+        commence = _parse_utc_datetime(row.get("commence_time_utc")) if hasattr(row, "get") else None
+        lookup[eid] = {
+            "home_team": home_team,
+            "away_team": away_team,
+            "norm_home": _norm_team(home_team),
+            "norm_away": _norm_team(away_team),
+            "commence": commence,
+        }
+    return lookup
+
+def fetch_scores_from_public_api(league: str, event_ids: list[str], days_from: int = 3) -> list[dict]:
+    path = LEAGUE_TO_ESPN_PATH.get(league)
+    if not path:
         return []
-    url = f"https://api.the-odds-api.com/v4/sports/{sport_key}/scores/"
-    r = requests.get(url, params={"daysFrom": str(days_from), "apiKey": ODDS_API_KEY}, timeout=20)
-    r.raise_for_status()
-    data = r.json()
-    return data if isinstance(data, list) else []
+
+    event_lookup = _event_lookup_for_league(league, event_ids)
+    if not event_lookup:
+        return []
+
+    name_index: dict[tuple[str, str], list[str]] = {}
+    for eid, info in event_lookup.items():
+        name_index.setdefault((info["norm_home"], info["norm_away"]), []).append(eid)
+
+    sport_part, league_part = path
+    today = datetime.now(timezone.utc).date()
+    dates = [today - timedelta(days=i) for i in range(max(1, days_from))]
+
+    out: list[dict] = []
+    seen: set[str] = set()
+
+    for d in dates:
+        url = f"{ESPN_SCOREBOARD_BASE}/{sport_part}/{league_part}/scoreboard"
+        try:
+            r = requests.get(url, params={"dates": d.strftime("%Y%m%d")}, timeout=20)
+            r.raise_for_status()
+            payload = r.json()
+        except Exception:
+            continue
+
+        events = payload.get("events") or []
+        for ev in events:
+            comps = ev.get("competitions") or []
+            if not comps:
+                continue
+            comp = comps[0]
+            competitors = comp.get("competitors") or []
+            home = next((c for c in competitors if c.get("homeAway") == "home"), None)
+            away = next((c for c in competitors if c.get("homeAway") == "away"), None)
+            if not home or not away:
+                continue
+
+            def _team_name(obj):
+                team = obj.get("team") or {}
+                return (
+                    team.get("displayName")
+                    or team.get("shortDisplayName")
+                    or team.get("name")
+                    or ""
+                )
+
+            home_name = _team_name(home)
+            away_name = _team_name(away)
+            key = (_norm_team(home_name), _norm_team(away_name))
+            candidate_ids = name_index.get(key, [])
+            if not candidate_ids:
+                continue
+
+            start_dt = _parse_utc_datetime(comp.get("date") or ev.get("date"))
+            chosen_id = None
+            best_delta = None
+            for cid in candidate_ids:
+                info = event_lookup.get(cid) or {}
+                commence = info.get("commence")
+                delta = None
+                if commence and start_dt:
+                    delta = abs((start_dt - commence).total_seconds())
+                if chosen_id is None or (delta is not None and (best_delta is None or delta < best_delta)):
+                    chosen_id = cid
+                    best_delta = delta
+
+            if not chosen_id or chosen_id in seen:
+                continue
+
+            info = event_lookup.get(chosen_id) or {}
+            status_type = (ev.get("status") or {}).get("type") or {}
+            completed = bool(status_type.get("completed"))
+
+            out.append({
+                "id": chosen_id,
+                "completed": completed,
+                "home_team": info.get("home_team", home_name),
+                "away_team": info.get("away_team", away_name),
+                "scores": [
+                    {"name": info.get("home_team", home_name), "score": home.get("score")},
+                    {"name": info.get("away_team", away_name), "score": away.get("score")},
+                ],
+            })
+            seen.add(chosen_id)
+
+    return out
 
 def upsert_event_result_from_score_item(item: dict, league: str) -> bool:
     """
@@ -551,13 +690,9 @@ def fetch_and_upsert_results_for_pending_parlays(days_from: int = 3) -> dict:
         return out
 
     for league in leagues:
-        sport_key = LEAGUE_TO_SPORT_KEY.get(league)
-        if not sport_key:
-            out["leagues"][league] = {"ok": False, "error": "unknown_league", "fetched": 0, "final_upserts": 0}
-            continue
-
+        event_ids = [str(eid) for (lg, eid) in pending_leg_rows if str(lg) == league]
         try:
-            items = fetch_scores_from_odds_api(sport_key, days_from=days_from)
+            items = fetch_scores_from_public_api(league, event_ids, days_from=days_from)
         except Exception as e:
             out["leagues"][league] = {"ok": False, "error": str(e), "fetched": 0, "final_upserts": 0}
             continue
@@ -733,11 +868,158 @@ def _ensure_worker_started():
     # Starts once when the first HTTP request hits this process
     if os.environ.get("RUN_WORKER_IN_WEB", "1") == "1":
         start_worker_if_needed()
+    if os.environ.get("RUN_SCRAPER_IN_WEB", "1") == "1":
+        start_scraper_if_needed()
 
 import atexit
 @atexit.register
 def _stop_worker():
     _worker_stop.set()
+
+
+# ----------------------------
+# Background odds scraper worker (runs odd_scraper.py) to refresh odds
+# ----------------------------
+SCRAPE_ENABLED = os.environ.get("SCRAPE_ENABLED", "1") == "1"
+ODDS_SCRAPER_PATH = os.environ.get("ODDS_SCRAPER_PATH", "odd_scraper.py")
+SCRAPE_OUTDIR = os.environ.get("OUTDIR", ".")  # odds_scraper.py already reads OUTDIR; pass too
+SCRAPE_GAMES_INTERVAL_SECONDS = int(os.environ.get("SCRAPE_GAMES_INTERVAL_SECONDS", str(60 * 120)))  # default 2 hours
+SCRAPE_GAMES_MIN_GAP_SECONDS = int(os.environ.get("SCRAPE_GAMES_MIN_GAP_SECONDS", "300"))  # avoid rapid repeats
+SCRAPE_SUBPROCESS_TIMEOUT = int(os.environ.get("SCRAPE_SUBPROCESS_TIMEOUT", "1800"))  # 30 min
+SCRAPE_LOG_STDOUT = os.environ.get("SCRAPE_LOG_STDOUT", "0") == "1"
+LOCK_KEY_SCRAPE_GAMES = int(os.environ.get("SCRAPE_LOCK_KEY_GAMES", "271828182"))
+
+_scraper_thread = None
+_scraper_stop = threading.Event()
+_scraper_lock = threading.Lock()
+
+_scrape_state = {
+    "games": {"last_started_utc": None, "last_finished_utc": None, "last_ok": None, "last_error": None},
+}
+
+def _utc_now_iso():
+    return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+
+def _pg_try_lock(key: int) -> bool:
+    try:
+        row = db.session.execute(text("SELECT pg_try_advisory_lock(:k)"), {"k": int(key)}).fetchone()
+        return bool(row and row[0])
+    except Exception:
+        return False
+
+def _pg_unlock(key: int) -> None:
+    try:
+        db.session.execute(text("SELECT pg_advisory_unlock(:k)"), {"k": int(key)})
+    except Exception:
+        pass
+
+def _run_odds_scraper_games() -> bool:
+    """
+    Runs odd_scraper.py in games mode to refresh the odds CSV.
+    """
+    if not os.path.exists(ODDS_SCRAPER_PATH):
+        raise RuntimeError(f"ODDS_SCRAPER_PATH not found: {ODDS_SCRAPER_PATH}")
+
+    env = dict(os.environ)
+    env["OUTDIR"] = SCRAPE_OUTDIR  # align with odds_scraper.py defaults
+
+    cmd = [
+        "python3",
+        ODDS_SCRAPER_PATH,
+        "--mode", "games",
+        "--outdir", SCRAPE_OUTDIR,
+    ]
+
+    started = time.time()
+    proc = subprocess.run(
+        cmd,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=SCRAPE_SUBPROCESS_TIMEOUT,
+    )
+    dur = time.time() - started
+
+    if SCRAPE_LOG_STDOUT and (proc.stdout or proc.stderr):
+        log.warning("[scraper:games] stdout:\n%s", (proc.stdout or "").strip())
+        log.warning("[scraper:games] stderr:\n%s", (proc.stderr or "").strip())
+    elif proc.returncode != 0:
+        log.warning("[scraper:games] stderr:\n%s", (proc.stderr or "").strip())
+
+    if proc.returncode != 0:
+        raise RuntimeError(f"odd_scraper.py games failed (code={proc.returncode}, dur={dur:.1f}s)")
+
+    return True
+
+def _scrape_games_once() -> None:
+    try:
+        with app.app_context():
+            got = _pg_try_lock(LOCK_KEY_SCRAPE_GAMES)
+            if not got:
+                return
+            try:
+                _scrape_state["games"]["last_started_utc"] = _utc_now_iso()
+                _scrape_state["games"]["last_error"] = None
+                ok = _run_odds_scraper_games()
+                _scrape_state["games"]["last_ok"] = bool(ok)
+                _scrape_state["games"]["last_finished_utc"] = _utc_now_iso()
+                load_data(force_reload=True)
+            except Exception as e:
+                _scrape_state["games"]["last_ok"] = False
+                _scrape_state["games"]["last_error"] = str(e)
+                _scrape_state["games"]["last_finished_utc"] = _utc_now_iso()
+            finally:
+                _pg_unlock(LOCK_KEY_SCRAPE_GAMES)
+    except Exception:
+        # keep worker alive even if a cycle fails
+        pass
+
+def _scraper_loop():
+    """
+    Run once at startup, then every SCRAPE_GAMES_INTERVAL_SECONDS (default 2 hours).
+    """
+    last_run_ts = 0.0
+    first_run = True
+
+    while not _scraper_stop.is_set():
+        now_ts = time.time()
+        should_run = False
+
+        if first_run:
+            should_run = True
+            first_run = False
+        elif (now_ts - last_run_ts) >= max(60, SCRAPE_GAMES_INTERVAL_SECONDS, SCRAPE_GAMES_MIN_GAP_SECONDS):
+            should_run = True
+
+        if should_run:
+            _scrape_games_once()
+            last_run_ts = time.time()
+
+        for _ in range(10):
+            if _scraper_stop.is_set():
+                break
+            time.sleep(1)
+
+def start_scraper_if_needed():
+    global _scraper_thread
+    if not SCRAPE_ENABLED:
+        return
+    if _scraper_thread is not None and _scraper_thread.is_alive():
+        return
+    with _scraper_lock:
+        if _scraper_thread is not None and _scraper_thread.is_alive():
+            return
+        _scraper_stop.clear()
+        _scraper_thread = threading.Thread(
+            target=_scraper_loop,
+            daemon=True,
+            name="odds-scraper",
+        )
+        _scraper_thread.start()
+
+@atexit.register
+def _stop_scraper():
+    _scraper_stop.set()
 
 
 # ----------------------------
@@ -1798,7 +2080,7 @@ def main():
 
     return render_template(
         "main.html",
-        title="Odds Insight",
+        title="The Odds Den",
         nba_games=nba_games,
         nfl_games=nfl_games,
         today_str=today_str,
@@ -1835,7 +2117,7 @@ def game(event_id: str):
 
     return render_template(
         "game.html",
-        title=f"{g['away_team']} @ {g['home_team']} — Odds Insight",
+        title=f"{g['away_team']} @ {g['home_team']} — The Odds Den",
         g=g,
         home_prob=home_prob,
         away_prob=away_prob,
@@ -1879,6 +2161,13 @@ with app.app_context():
 if os.environ.get("START_WORKER_ON_BOOT", "0") == "1" and os.environ.get("RUN_WORKER_IN_WEB", "1") == "1":
     try:
         start_worker_if_needed()
+    except Exception:
+        pass
+
+# Kick off odds scraper on boot (default on) so odds refresh immediately
+if os.environ.get("START_SCRAPER_ON_BOOT", "1") == "1" and os.environ.get("RUN_SCRAPER_IN_WEB", "1") == "1":
+    try:
+        start_scraper_if_needed()
     except Exception:
         pass
 
