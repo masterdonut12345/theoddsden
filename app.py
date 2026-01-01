@@ -7,6 +7,7 @@ import difflib
 import threading
 import time
 import logging
+import subprocess
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
@@ -867,11 +868,158 @@ def _ensure_worker_started():
     # Starts once when the first HTTP request hits this process
     if os.environ.get("RUN_WORKER_IN_WEB", "1") == "1":
         start_worker_if_needed()
+    if os.environ.get("RUN_SCRAPER_IN_WEB", "1") == "1":
+        start_scraper_if_needed()
 
 import atexit
 @atexit.register
 def _stop_worker():
     _worker_stop.set()
+
+
+# ----------------------------
+# Background odds scraper worker (runs odd_scraper.py) to refresh odds
+# ----------------------------
+SCRAPE_ENABLED = os.environ.get("SCRAPE_ENABLED", "1") == "1"
+ODDS_SCRAPER_PATH = os.environ.get("ODDS_SCRAPER_PATH", "odd_scraper.py")
+SCRAPE_OUTDIR = os.environ.get("OUTDIR", ".")  # odds_scraper.py already reads OUTDIR; pass too
+SCRAPE_GAMES_INTERVAL_SECONDS = int(os.environ.get("SCRAPE_GAMES_INTERVAL_SECONDS", str(60 * 120)))  # default 2 hours
+SCRAPE_GAMES_MIN_GAP_SECONDS = int(os.environ.get("SCRAPE_GAMES_MIN_GAP_SECONDS", "300"))  # avoid rapid repeats
+SCRAPE_SUBPROCESS_TIMEOUT = int(os.environ.get("SCRAPE_SUBPROCESS_TIMEOUT", "1800"))  # 30 min
+SCRAPE_LOG_STDOUT = os.environ.get("SCRAPE_LOG_STDOUT", "0") == "1"
+LOCK_KEY_SCRAPE_GAMES = int(os.environ.get("SCRAPE_LOCK_KEY_GAMES", "271828182"))
+
+_scraper_thread = None
+_scraper_stop = threading.Event()
+_scraper_lock = threading.Lock()
+
+_scrape_state = {
+    "games": {"last_started_utc": None, "last_finished_utc": None, "last_ok": None, "last_error": None},
+}
+
+def _utc_now_iso():
+    return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+
+def _pg_try_lock(key: int) -> bool:
+    try:
+        row = db.session.execute(text("SELECT pg_try_advisory_lock(:k)"), {"k": int(key)}).fetchone()
+        return bool(row and row[0])
+    except Exception:
+        return False
+
+def _pg_unlock(key: int) -> None:
+    try:
+        db.session.execute(text("SELECT pg_advisory_unlock(:k)"), {"k": int(key)})
+    except Exception:
+        pass
+
+def _run_odds_scraper_games() -> bool:
+    """
+    Runs odd_scraper.py in games mode to refresh the odds CSV.
+    """
+    if not os.path.exists(ODDS_SCRAPER_PATH):
+        raise RuntimeError(f"ODDS_SCRAPER_PATH not found: {ODDS_SCRAPER_PATH}")
+
+    env = dict(os.environ)
+    env["OUTDIR"] = SCRAPE_OUTDIR  # align with odds_scraper.py defaults
+
+    cmd = [
+        "python3",
+        ODDS_SCRAPER_PATH,
+        "--mode", "games",
+        "--outdir", SCRAPE_OUTDIR,
+    ]
+
+    started = time.time()
+    proc = subprocess.run(
+        cmd,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=SCRAPE_SUBPROCESS_TIMEOUT,
+    )
+    dur = time.time() - started
+
+    if SCRAPE_LOG_STDOUT and (proc.stdout or proc.stderr):
+        log.warning("[scraper:games] stdout:\n%s", (proc.stdout or "").strip())
+        log.warning("[scraper:games] stderr:\n%s", (proc.stderr or "").strip())
+    elif proc.returncode != 0:
+        log.warning("[scraper:games] stderr:\n%s", (proc.stderr or "").strip())
+
+    if proc.returncode != 0:
+        raise RuntimeError(f"odd_scraper.py games failed (code={proc.returncode}, dur={dur:.1f}s)")
+
+    return True
+
+def _scrape_games_once() -> None:
+    try:
+        with app.app_context():
+            got = _pg_try_lock(LOCK_KEY_SCRAPE_GAMES)
+            if not got:
+                return
+            try:
+                _scrape_state["games"]["last_started_utc"] = _utc_now_iso()
+                _scrape_state["games"]["last_error"] = None
+                ok = _run_odds_scraper_games()
+                _scrape_state["games"]["last_ok"] = bool(ok)
+                _scrape_state["games"]["last_finished_utc"] = _utc_now_iso()
+                load_data(force_reload=True)
+            except Exception as e:
+                _scrape_state["games"]["last_ok"] = False
+                _scrape_state["games"]["last_error"] = str(e)
+                _scrape_state["games"]["last_finished_utc"] = _utc_now_iso()
+            finally:
+                _pg_unlock(LOCK_KEY_SCRAPE_GAMES)
+    except Exception:
+        # keep worker alive even if a cycle fails
+        pass
+
+def _scraper_loop():
+    """
+    Run once at startup, then every SCRAPE_GAMES_INTERVAL_SECONDS (default 2 hours).
+    """
+    last_run_ts = 0.0
+    first_run = True
+
+    while not _scraper_stop.is_set():
+        now_ts = time.time()
+        should_run = False
+
+        if first_run:
+            should_run = True
+            first_run = False
+        elif (now_ts - last_run_ts) >= max(60, SCRAPE_GAMES_INTERVAL_SECONDS, SCRAPE_GAMES_MIN_GAP_SECONDS):
+            should_run = True
+
+        if should_run:
+            _scrape_games_once()
+            last_run_ts = time.time()
+
+        for _ in range(10):
+            if _scraper_stop.is_set():
+                break
+            time.sleep(1)
+
+def start_scraper_if_needed():
+    global _scraper_thread
+    if not SCRAPE_ENABLED:
+        return
+    if _scraper_thread is not None and _scraper_thread.is_alive():
+        return
+    with _scraper_lock:
+        if _scraper_thread is not None and _scraper_thread.is_alive():
+            return
+        _scraper_stop.clear()
+        _scraper_thread = threading.Thread(
+            target=_scraper_loop,
+            daemon=True,
+            name="odds-scraper",
+        )
+        _scraper_thread.start()
+
+@atexit.register
+def _stop_scraper():
+    _scraper_stop.set()
 
 
 # ----------------------------
@@ -1932,7 +2080,7 @@ def main():
 
     return render_template(
         "main.html",
-        title="Odds Insight",
+        title="The Odds Den",
         nba_games=nba_games,
         nfl_games=nfl_games,
         today_str=today_str,
@@ -1969,7 +2117,7 @@ def game(event_id: str):
 
     return render_template(
         "game.html",
-        title=f"{g['away_team']} @ {g['home_team']} — Odds Insight",
+        title=f"{g['away_team']} @ {g['home_team']} — The Odds Den",
         g=g,
         home_prob=home_prob,
         away_prob=away_prob,
@@ -2013,6 +2161,13 @@ with app.app_context():
 if os.environ.get("START_WORKER_ON_BOOT", "0") == "1" and os.environ.get("RUN_WORKER_IN_WEB", "1") == "1":
     try:
         start_worker_if_needed()
+    except Exception:
+        pass
+
+# Kick off odds scraper on boot (default on) so odds refresh immediately
+if os.environ.get("START_SCRAPER_ON_BOOT", "1") == "1" and os.environ.get("RUN_SCRAPER_IN_WEB", "1") == "1":
+    try:
+        start_scraper_if_needed()
     except Exception:
         pass
 

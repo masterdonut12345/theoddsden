@@ -1872,7 +1872,7 @@ def main():
 
     return render_template(
         "main.html",
-        title="Odds Insight",
+        title="The Odds Den",
         nba_games=nba_games,
         nfl_games=nfl_games,
         today_str=today_str,
@@ -1910,7 +1910,7 @@ def game(event_id: str):
 
     return render_template(
         "game.html",
-        title=f"{g['away_team']} @ {g['home_team']} — Odds Insight",
+        title=f"{g['away_team']} @ {g['home_team']} — The Odds Den",
         g=g,
         home_prob=home_prob,
         away_prob=away_prob,
