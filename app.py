@@ -465,23 +465,161 @@ def settle_parlays_once(limit: int = 100) -> int:
 
 
 # ----------------------------
-# Odds API -> EventResult fetcher (the missing piece for settlement)
+# Public scoreboard API (no key required) -> EventResult fetcher
 # ----------------------------
-ODDS_API_KEY = os.environ.get("ODDS_API_KEY", "").strip()
+ESPN_SCOREBOARD_BASE = "https://site.api.espn.com/apis/v2/sports"
 
-LEAGUE_TO_SPORT_KEY = {
-    "NBA": "basketball_nba",
-    "NFL": "americanfootball_nfl",
+LEAGUE_TO_ESPN_PATH = {
+    "NBA": ("basketball", "nba"),
+    "NFL": ("football", "nfl"),
 }
 
-def fetch_scores_from_odds_api(sport_key: str, days_from: int = 3) -> list[dict]:
-    if not ODDS_API_KEY:
+def _parse_utc_datetime(val):
+    try:
+        if val is None:
+            return None
+        if isinstance(val, datetime):
+            dt = val
+        else:
+            s = str(val)
+            if s.endswith("Z"):
+                s = s[:-1] + "+00:00"
+            dt = datetime.fromisoformat(s)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        else:
+            dt = dt.astimezone(timezone.utc)
+        return dt
+    except Exception:
+        return None
+
+def _event_lookup_for_league(league: str, event_ids: list[str]):
+    games = load_data()
+    if games is None or getattr(games, "empty", True):
+        return {}
+
+    df = games[games.get("league") == league] if hasattr(games, "get") else games
+    try:
+        df = games[games["league"] == league]
+    except Exception:
+        pass
+
+    if event_ids:
+        try:
+            df = df[df["event_id"].isin(event_ids)]
+        except Exception:
+            pass
+
+    lookup = {}
+    for _, row in (df.iterrows() if hasattr(df, "iterrows") else []):
+        try:
+            eid = str(row.get("event_id"))
+        except Exception:
+            eid = str(row["event_id"])
+        if not eid:
+            continue
+        home_team = str(row.get("home_team", "") or "").strip()
+        away_team = str(row.get("away_team", "") or "").strip()
+        commence = _parse_utc_datetime(row.get("commence_time_utc")) if hasattr(row, "get") else None
+        lookup[eid] = {
+            "home_team": home_team,
+            "away_team": away_team,
+            "norm_home": _norm_team(home_team),
+            "norm_away": _norm_team(away_team),
+            "commence": commence,
+        }
+    return lookup
+
+def fetch_scores_from_public_api(league: str, event_ids: list[str], days_from: int = 3) -> list[dict]:
+    path = LEAGUE_TO_ESPN_PATH.get(league)
+    if not path:
         return []
-    url = f"https://api.the-odds-api.com/v4/sports/{sport_key}/scores/"
-    r = requests.get(url, params={"daysFrom": str(days_from), "apiKey": ODDS_API_KEY}, timeout=20)
-    r.raise_for_status()
-    data = r.json()
-    return data if isinstance(data, list) else []
+
+    event_lookup = _event_lookup_for_league(league, event_ids)
+    if not event_lookup:
+        return []
+
+    name_index: dict[tuple[str, str], list[str]] = {}
+    for eid, info in event_lookup.items():
+        name_index.setdefault((info["norm_home"], info["norm_away"]), []).append(eid)
+
+    sport_part, league_part = path
+    today = datetime.now(timezone.utc).date()
+    dates = [today - timedelta(days=i) for i in range(max(1, days_from))]
+
+    out: list[dict] = []
+    seen: set[str] = set()
+
+    for d in dates:
+        url = f"{ESPN_SCOREBOARD_BASE}/{sport_part}/{league_part}/scoreboard"
+        try:
+            r = requests.get(url, params={"dates": d.strftime("%Y%m%d")}, timeout=20)
+            r.raise_for_status()
+            payload = r.json()
+        except Exception:
+            continue
+
+        events = payload.get("events") or []
+        for ev in events:
+            comps = ev.get("competitions") or []
+            if not comps:
+                continue
+            comp = comps[0]
+            competitors = comp.get("competitors") or []
+            home = next((c for c in competitors if c.get("homeAway") == "home"), None)
+            away = next((c for c in competitors if c.get("homeAway") == "away"), None)
+            if not home or not away:
+                continue
+
+            def _team_name(obj):
+                team = obj.get("team") or {}
+                return (
+                    team.get("displayName")
+                    or team.get("shortDisplayName")
+                    or team.get("name")
+                    or ""
+                )
+
+            home_name = _team_name(home)
+            away_name = _team_name(away)
+            key = (_norm_team(home_name), _norm_team(away_name))
+            candidate_ids = name_index.get(key, [])
+            if not candidate_ids:
+                continue
+
+            start_dt = _parse_utc_datetime(comp.get("date") or ev.get("date"))
+            chosen_id = None
+            best_delta = None
+            for cid in candidate_ids:
+                info = event_lookup.get(cid) or {}
+                commence = info.get("commence")
+                delta = None
+                if commence and start_dt:
+                    delta = abs((start_dt - commence).total_seconds())
+                if chosen_id is None or (delta is not None and (best_delta is None or delta < best_delta)):
+                    chosen_id = cid
+                    best_delta = delta
+
+            if not chosen_id or chosen_id in seen:
+                continue
+
+            info = event_lookup.get(chosen_id) or {}
+            status_type = (ev.get("status") or {}).get("type") or {}
+            completed = bool(status_type.get("completed"))
+
+            out.append({
+                "id": chosen_id,
+                "completed": completed,
+                "home_team": info.get("home_team", home_name),
+                "away_team": info.get("away_team", away_name),
+                "scores": [
+                    {"name": info.get("home_team", home_name), "score": home.get("score")},
+                    {"name": info.get("away_team", away_name), "score": away.get("score")},
+                ],
+            })
+            seen.add(chosen_id)
+
+    return out
 
 def upsert_event_result_from_score_item(item: dict, league: str) -> bool:
     """
@@ -551,13 +689,9 @@ def fetch_and_upsert_results_for_pending_parlays(days_from: int = 3) -> dict:
         return out
 
     for league in leagues:
-        sport_key = LEAGUE_TO_SPORT_KEY.get(league)
-        if not sport_key:
-            out["leagues"][league] = {"ok": False, "error": "unknown_league", "fetched": 0, "final_upserts": 0}
-            continue
-
+        event_ids = [str(eid) for (lg, eid) in pending_leg_rows if str(lg) == league]
         try:
-            items = fetch_scores_from_odds_api(sport_key, days_from=days_from)
+            items = fetch_scores_from_public_api(league, event_ids, days_from=days_from)
         except Exception as e:
             out["leagues"][league] = {"ok": False, "error": str(e), "fetched": 0, "final_upserts": 0}
             continue
