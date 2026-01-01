@@ -1,0 +1,410 @@
+{% extends "base.html" %}
+{% block content %}
+
+  <!-- Top actions -->
+  <div class="d-flex gap-2 flex-wrap mb-3 align-items-center">
+    <a class="btn btn-sm btn-outline-light" href="{{ url_for('leaderboard_page') }}">🏆 Leaderboard</a>
+
+    {% if current_user.is_authenticated %}
+      <button id="daily-claim-btn" class="btn btn-sm btn-success">🎁 Claim Daily Coins</button>
+    {% else %}
+      <a class="btn btn-sm btn-outline-success" href="{{ url_for('login', next=request.full_path) }}">Log in to claim daily coins</a>
+    {% endif %}
+  </div>
+
+  <div class="row g-3 align-items-stretch mb-3">
+    <div class="col-12 col-lg-8">
+      <div class="card h-100">
+        <div class="card-body p-4">
+          <div class="d-flex justify-content-between align-items-start gap-3">
+            <div>
+              <div class="subtle small">Today’s slate</div>
+              <h1 class="h3 mb-2">NBA + NFL games</h1>
+              <div class="subtle">{{ today_str }} <span class="mx-2">•</span> {{ config.get("LOCAL_TZ", "America/Chicago") }}</div>
+              <div class="subtle small mt-1">Loaded from CSV at {{ loaded_at }}</div>
+            </div>
+            <div class="text-end">
+              <a class="btn btn-sm btn-outline-light" href="{{ url_for('reload_data') }}">Reload CSV</a>
+            </div>
+          </div>
+
+          <div class="mt-3 d-flex flex-wrap gap-2">
+            <span class="pill">Best lines (simple)</span>
+            <span class="pill">Team season metrics</span>
+            <span class="pill">Team trends (selectable)</span>
+            <span class="pill">Parlay builder</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-12 col-lg-4">
+      <div class="card h-100">
+        <div class="card-body p-4">
+          <div class="subtle small">Quick counts</div>
+          <div class="d-flex justify-content-between align-items-end mt-2">
+            <div>
+              <div class="subtle">NBA</div>
+              <div class="h2 mb-0">{{ nba_games|length }}</div>
+            </div>
+            <div>
+              <div class="subtle">NFL</div>
+              <div class="h2 mb-0">{{ nfl_games|length }}</div>
+            </div>
+          </div>
+          <div class="subtle small mt-3">
+            Click any matchup to view odds, spreads/totals, season metrics, trends, and AI + parlay tools.
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- My Parlays -->
+  <div class="card mb-3">
+    <div class="card-body p-4">
+      <div class="d-flex justify-content-between align-items-center">
+        <div>
+          <div class="subtle small">My bets</div>
+          <div class="h5 mb-0">My Parlays</div>
+        </div>
+        <div class="subtle small" id="myParlaysStatus"></div>
+      </div>
+
+      {% if current_user.is_authenticated %}
+        <div id="myParlaysList" class="mt-3 d-flex flex-column gap-2"></div>
+      {% else %}
+        <div class="subtle mt-3">
+          <a href="{{ url_for('login', next=request.full_path) }}">Login</a> to view and place parlays with coins.
+        </div>
+      {% endif %}
+    </div>
+  </div>
+
+  <ul class="nav nav-tabs" role="tablist">
+    <li class="nav-item" role="presentation">
+      <button class="nav-link active" data-bs-toggle="tab" data-bs-target="#nba" type="button" role="tab">
+        🏀 NBA
+      </button>
+    </li>
+    <li class="nav-item" role="presentation">
+      <button class="nav-link" data-bs-toggle="tab" data-bs-target="#nfl" type="button" role="tab">
+        🏈 NFL
+      </button>
+    </li>
+  </ul>
+
+  <div class="tab-pane-wrap p-3">
+    <div class="tab-content">
+
+      {% macro add_buttons(g) %}
+        <div class="mt-3 d-flex flex-wrap gap-2">
+
+          {% if g.home_ml_best is not none %}
+          <button type="button" class="btn btn-sm btn-outline-light"
+            onclick='event.preventDefault(); event.stopPropagation(); addToParlay({
+              event_id: {{ g.event_id|tojson }},
+              league: {{ g.league|tojson }},
+              matchup: {{ (g.away_team ~ " @ " ~ g.home_team)|tojson }},
+              market: "Moneyline",
+              selection: "HOME_ML",
+              label: {{ (g.home_team ~ " ML")|tojson }},
+              american: {{ g.home_ml_best|tojson }},
+              displayOdds: {{ g.home_ml_best|tojson }}
+            });'>
+            + {{ g.home_team }} ML
+          </button>
+          {% endif %}
+
+          {% if g.away_ml_best is not none %}
+          <button type="button" class="btn btn-sm btn-outline-light"
+            onclick='event.preventDefault(); event.stopPropagation(); addToParlay({
+              event_id: {{ g.event_id|tojson }},
+              league: {{ g.league|tojson }},
+              matchup: {{ (g.away_team ~ " @ " ~ g.home_team)|tojson }},
+              market: "Moneyline",
+              selection: "AWAY_ML",
+              label: {{ (g.away_team ~ " ML")|tojson }},
+              american: {{ g.away_ml_best|tojson }},
+              displayOdds: {{ g.away_ml_best|tojson }}
+            });'>
+            + {{ g.away_team }} ML
+          </button>
+          {% endif %}
+
+          {% if g.spread_home_point is not none and g.spread_home_price_best is not none %}
+          <button type="button" class="btn btn-sm btn-outline-light"
+            onclick='event.preventDefault(); event.stopPropagation(); addToParlay({
+              event_id: {{ g.event_id|tojson }},
+              league: {{ g.league|tojson }},
+              matchup: {{ (g.away_team ~ " @ " ~ g.home_team)|tojson }},
+              market: "Spread",
+              selection: "HOME_SPREAD",
+              label: {{ (g.home_team ~ " " ~ g.spread_home_point)|tojson }},
+              american: {{ g.spread_home_price_best|tojson }},
+              displayOdds: {{ g.spread_home_price_best|tojson }},
+              point: {{ g.spread_home_point|tojson }}
+            });'>
+            + {{ g.home_team }} {{ g.spread_home_point }} ({{ g.spread_home_price_best }})
+          </button>
+          {% endif %}
+
+          {% if g.spread_away_point is not none and g.spread_away_price_best is not none %}
+          <button type="button" class="btn btn-sm btn-outline-light"
+            onclick='event.preventDefault(); event.stopPropagation(); addToParlay({
+              event_id: {{ g.event_id|tojson }},
+              league: {{ g.league|tojson }},
+              matchup: {{ (g.away_team ~ " @ " ~ g.home_team)|tojson }},
+              market: "Spread",
+              selection: "AWAY_SPREAD",
+              label: {{ (g.away_team ~ " " ~ g.spread_away_point)|tojson }},
+              american: {{ g.spread_away_price_best|tojson }},
+              displayOdds: {{ g.spread_away_price_best|tojson }},
+              point: {{ g.spread_away_point|tojson }}
+            });'>
+            + {{ g.away_team }} {{ g.spread_away_point }} ({{ g.spread_away_price_best }})
+          </button>
+          {% endif %}
+
+          {% if g.total_points is not none and g.total_over_price_best is not none %}
+          <button type="button" class="btn btn-sm btn-outline-light"
+            onclick='event.preventDefault(); event.stopPropagation(); addToParlay({
+              event_id: {{ g.event_id|tojson }},
+              league: {{ g.league|tojson }},
+              matchup: {{ (g.away_team ~ " @ " ~ g.home_team)|tojson }},
+              market: "Total",
+              selection: "OVER",
+              label: {{ ("Over " ~ g.total_points)|tojson }},
+              american: {{ g.total_over_price_best|tojson }},
+              displayOdds: {{ g.total_over_price_best|tojson }},
+              point: {{ g.total_points|tojson }}
+            });'>
+            + Over {{ g.total_points }} ({{ g.total_over_price_best }})
+          </button>
+          {% endif %}
+
+          {% if g.total_points is not none and g.total_under_price_best is not none %}
+          <button type="button" class="btn btn-sm btn-outline-light"
+            onclick='event.preventDefault(); event.stopPropagation(); addToParlay({
+              event_id: {{ g.event_id|tojson }},
+              league: {{ g.league|tojson }},
+              matchup: {{ (g.away_team ~ " @ " ~ g.home_team)|tojson }},
+              market: "Total",
+              selection: "UNDER",
+              label: {{ ("Under " ~ g.total_points)|tojson }},
+              american: {{ g.total_under_price_best|tojson }},
+              displayOdds: {{ g.total_under_price_best|tojson }},
+              point: {{ g.total_points|tojson }}
+            });'>
+            + Under {{ g.total_points }} ({{ g.total_under_price_best }})
+          </button>
+          {% endif %}
+        </div>
+      {% endmacro %}
+
+      <!-- NBA -->
+      <div class="tab-pane fade show active" id="nba" role="tabpanel">
+        {% if nba_games|length == 0 %}
+          <div class="subtle">No NBA games in the CSV.</div>
+        {% else %}
+          <div class="row g-3">
+            {% for g in nba_games %}
+              <div class="col-12 col-md-6 col-lg-4">
+                <div class="card h-100 game-card">
+                  <div class="card-body p-4">
+                    <div class="d-flex justify-content-between align-items-start">
+                      <div class="subtle small">{{ g.commence_local_str }}</div>
+                      <span class="badge badge-soft">NBA</span>
+                    </div>
+
+                    <div class="mt-2 fw-semibold fs-5">{{ g.away_team }} <span class="subtle">@</span> {{ g.home_team }}</div>
+
+                    <div class="mt-3 d-flex flex-wrap gap-2 small">
+                      <span class="pill">ML: {{ g.home_ml_best }} / {{ g.away_ml_best }}</span>
+                      {% if g.spread_home_point is not none %}
+                        <span class="pill">Spread: {{ g.spread_home_point }}</span>
+                      {% endif %}
+                      {% if g.total_points is not none %}
+                        <span class="pill">Total: {{ g.total_points }}</span>
+                      {% endif %}
+                    </div>
+
+                    <div class="mt-3">
+                      <a class="btn btn-sm btn-outline-primary"
+                         href="{{ url_for('game', event_id=g.event_id) }}">
+                        View odds & metrics →
+                      </a>
+                    </div>
+
+                    {{ add_buttons(g) }}
+
+                    <a class="stretched-link" href="{{ url_for('game', event_id=g.event_id) }}" aria-label="Open game"></a>
+                  </div>
+                </div>
+              </div>
+            {% endfor %}
+          </div>
+        {% endif %}
+      </div>
+
+      <!-- NFL -->
+      <div class="tab-pane fade" id="nfl" role="tabpanel">
+        {% if nfl_games|length == 0 %}
+          <div class="subtle">No NFL games in the CSV.</div>
+        {% else %}
+          <div class="row g-3">
+            {% for g in nfl_games %}
+              <div class="col-12 col-md-6 col-lg-4">
+                <div class="card h-100 game-card">
+                  <div class="card-body p-4">
+                    <div class="d-flex justify-content-between align-items-start">
+                      <div class="subtle small">{{ g.commence_local_str }}</div>
+                      <span class="badge badge-soft">NFL</span>
+                    </div>
+
+                    <div class="mt-2 fw-semibold fs-5">{{ g.away_team }} <span class="subtle">@</span> {{ g.home_team }}</div>
+
+                    <div class="mt-3 d-flex flex-wrap gap-2 small">
+                      <span class="pill">ML: {{ g.home_ml_best }} / {{ g.away_ml_best }}</span>
+                      {% if g.spread_home_point is not none %}
+                        <span class="pill">Spread: {{ g.spread_home_point }}</span>
+                      {% endif %}
+                      {% if g.total_points is not none %}
+                        <span class="pill">Total: {{ g.total_points }}</span>
+                      {% endif %}
+                    </div>
+
+                    <div class="mt-3">
+                      <a class="btn btn-sm btn-outline-primary"
+                         href="{{ url_for('game', event_id=g.event_id) }}">
+                        View odds & metrics →
+                      </a>
+                    </div>
+
+                    {{ add_buttons(g) }}
+
+                    <a class="stretched-link" href="{{ url_for('game', event_id=g.event_id) }}" aria-label="Open game"></a>
+                  </div>
+                </div>
+              </div>
+            {% endfor %}
+          </div>
+        {% endif %}
+      </div>
+
+    </div>
+  </div>
+
+{% endblock %}
+
+{% block scripts %}
+  {% if current_user.is_authenticated %}
+  <script>
+    // Daily claim
+    (function(){
+      const btn = document.getElementById("daily-claim-btn");
+      if(!btn) return;
+
+      btn.addEventListener("click", async () => {
+        btn.disabled = true;
+        try{
+          const r = await fetch("/api/claim_daily", { method: "POST" });
+          const j = await r.json().catch(()=> ({}));
+          if(!r.ok){
+            alert(j.message || j.error || "Claim failed");
+            return;
+          }
+          alert(`Claimed ${j.amount} coins! New balance: ${j.balance}`);
+          window.location.reload();
+        }catch(e){
+          alert("Claim failed (network error).");
+        }finally{
+          btn.disabled = false;
+        }
+      });
+    })();
+
+    function escapeHtml(s){
+      return String(s ?? "").replace(/[&<>"']/g, c => ({
+        "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"
+      }[c]));
+    }
+
+    function fmtTime(iso){
+      if(!iso) return "—";
+      try{
+        const d = new Date(iso);
+        return d.toLocaleString();
+      }catch{
+        return iso;
+      }
+    }
+
+    function statusBadge(status){
+      const s = String(status || "").toUpperCase();
+      if(s === "WON") return `<span class="badge badge-soft">WON</span>`;
+      if(s === "LOST") return `<span class="badge badge-soft">LOST</span>`;
+      return `<span class="badge badge-soft">PENDING</span>`;
+    }
+
+    window.refreshMyParlays = async function(){
+      const box = document.getElementById("myParlaysList");
+      const st = document.getElementById("myParlaysStatus");
+      if(!box) return;
+
+      st.textContent = "Loading…";
+      box.innerHTML = "";
+
+      try{
+        const r = await fetch("/api/parlays/mine", { cache: "no-store" });
+        if(r.status === 401){
+          st.textContent = "Login required.";
+          box.innerHTML = `<div class="subtle">Please login to see your parlays.</div>`;
+          return;
+        }
+        const j = await r.json().catch(()=> ({}));
+        if(!r.ok || !j.ok){
+          st.textContent = "Error";
+          box.innerHTML = `<div class="subtle">Failed to load parlays.</div>`;
+          return;
+        }
+
+        const parlays = j.parlays || [];
+        st.textContent = parlays.length ? `Showing ${parlays.length}` : "None yet";
+
+        if(parlays.length === 0){
+          box.innerHTML = `<div class="subtle">No parlays yet. Build one with the Parlay drawer and click <b>Place parlay</b>.</div>`;
+          return;
+        }
+
+        box.innerHTML = parlays.map(p => {
+          const legs = p.legs || [];
+          const legsText = legs.map(l => escapeHtml(l.label || "")).join(" • ");
+          return `
+            <div class="parlay-leg">
+              <div class="d-flex justify-content-between align-items-start gap-2">
+                <div>
+                  <div class="fw-semibold">#${escapeHtml(p.id)} ${statusBadge(p.status)}</div>
+                  <div class="subtle small mt-1">
+                    Stake: <b>${escapeHtml(p.stake)}</b> coins
+                    <span class="mx-2">•</span>
+                    Odds: <b>${escapeHtml((p.american_odds ?? "—").toString())}</b> (dec ${escapeHtml((p.decimal_odds ?? "—").toString())})
+                  </div>
+                  <div class="subtle small mt-1">Placed: ${escapeHtml(fmtTime(p.placed_at))}</div>
+                  <div class="subtle small mt-2">${legsText || "—"}</div>
+                </div>
+              </div>
+            </div>
+          `;
+        }).join("");
+      }catch(e){
+        st.textContent = "Error";
+        box.innerHTML = `<div class="subtle">Network error loading parlays.</div>`;
+      }
+    }
+
+    // initial load
+    window.refreshMyParlays();
+  </script>
+  {% endif %}
+{% endblock %}

@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block content %}
+  <div class="row justify-content-center">
+    <div class="col-12 col-md-6 col-lg-5">
+      <div class="card">
+        <div class="card-body p-4">
+          <div class="subtle small">Welcome back</div>
+          <h1 class="h4 mb-3">Login</h1>
+
+          <form method="post" action="{{ url_for('login', next=next_url) }}">
+            <div class="mb-3">
+              <label class="form-label subtle">Username</label>
+              <input name="username" class="form-control" required autocomplete="username">
+            </div>
+
+            <div class="mb-3">
+              <label class="form-label subtle">Password</label>
+              <input name="password" type="password" class="form-control" required autocomplete="current-password">
+            </div>
+
+            <button class="btn btn-outline-primary w-100" type="submit">Login</button>
+          </form>
+
+          <div class="subtle small mt-3">
+            No account yet?
+            <a href="{{ url_for('signup') }}">Sign up</a>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+{% endblock %}

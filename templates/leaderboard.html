@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+
+{% block content %}
+  <div class="d-flex justify-content-between align-items-start gap-3 mb-3">
+    <div>
+      <h1 class="h4 mb-1">Leaderboard</h1>
+      <div class="subtle small">Top 100 users by coins</div>
+    </div>
+    <div class="d-flex gap-2">
+      <a class="btn btn-sm btn-outline-light" href="{{ url_for('main') }}">← Back</a>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-body p-4">
+      <div class="table-responsive">
+        <table class="table table-sm align-middle mb-0">
+          <thead class="subtle">
+            <tr>
+              <th style="width: 8%;">#</th>
+              <th>User</th>
+              <th style="width: 16%;">Coins</th>
+              <th style="width: 18%;">Parlays</th>
+              <th style="width: 18%;">Hit %</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% if not top_users %}
+              <tr><td colspan="5" class="subtle">No users yet.</td></tr>
+            {% else %}
+              {% for u in top_users %}
+                <tr>
+                  <td class="subtle">{{ loop.index }}</td>
+                  <td class="fw-semibold">{{ u.username }}</td>
+                  <td class="fw-semibold">{{ u.balance }}</td>
+                  <td class="fw-semibold">{{ u.parlays_placed }}</td>
+                  <td class="fw-semibold">
+                    {% if u.hit_pct is none %}
+                      —
+                    {% else %}
+                      {{ "%.1f"|format(u.hit_pct) }}%
+                    {% endif %}
+                  </td>
+                </tr>
+              {% endfor %}
+            {% endif %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+{% endblock %}

@@ -1,0 +1,727 @@
+<!doctype html>
+<html lang="en" data-bs-theme="dark">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{{ title or "Odds Insight" }}</title>
+
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet"/>
+
+    <style>
+      :root{
+        --bg0:#0b0f19;
+        --bg1:#0f172a;
+        --card:#0b1220;
+        --card2:#0c1526;
+        --text:#e5e7eb;
+        --muted:#9ca3af;
+        --border: rgba(255,255,255,.08);
+
+        /* Focus ring theme */
+        --bs-focus-ring-color: rgba(99,102,241,.22);
+        --bs-focus-ring-width: .22rem;
+      }
+
+      body{
+        background:
+          radial-gradient(900px 450px at 15% -10%, rgba(99,102,241,.22), transparent 55%),
+          radial-gradient(800px 420px at 85% -15%, rgba(34,197,94,.12), transparent 55%),
+          linear-gradient(180deg, var(--bg0), var(--bg1));
+        color: var(--text);
+
+        -webkit-font-smoothing: antialiased;
+        -moz-osx-font-smoothing: grayscale;
+        text-rendering: geometricPrecision;
+      }
+
+      .navbar{
+        background: rgba(11, 15, 25, .6) !important;
+        backdrop-filter: blur(10px);
+        border-bottom: 1px solid var(--border);
+      }
+
+      .brand-dot{
+        width: 10px; height: 10px; border-radius: 999px;
+        background: #22c55e;
+        box-shadow: 0 0 0 6px rgba(34,197,94,.15);
+        display: inline-block;
+        margin-right: .6rem;
+      }
+
+      .shell{ max-width: 1100px; }
+
+      .card{
+        background: linear-gradient(180deg, var(--card), var(--card2));
+        border: 1px solid var(--border);
+        box-shadow: 0 14px 40px rgba(0,0,0,.35);
+        transition: 140ms ease;
+        transition-property: transform, box-shadow, border-color;
+      }
+
+      .card:hover{
+        border-color: rgba(99,102,241,.35);
+        box-shadow: 0 18px 55px rgba(0,0,0,.45);
+        transform: translateY(-1px);
+      }
+
+      .pill{
+        border: 1px solid var(--border);
+        background: rgba(255,255,255,.03);
+        color: var(--muted);
+        padding: .35rem .6rem;
+        border-radius: 999px;
+        font-size: .8rem;
+      }
+
+      .subtle{ color: var(--muted); }
+
+      .game-card{ position: relative; }
+      .game-card .stretched-link{ z-index: 1; }
+      .game-card .btn, .game-card button{ position: relative; z-index: 3; }
+      .stretched-link::after{ pointer-events: none; }
+
+      .nav-tabs{ border-bottom: 1px solid var(--border); }
+      .nav-tabs .nav-link{
+        border: 0;
+        color: rgba(229,231,235,.7);
+        padding: .75rem 1rem;
+        border-radius: .9rem .9rem 0 0;
+      }
+      .nav-tabs .nav-link.active{
+        background: rgba(255,255,255,.04);
+        color: var(--text);
+        box-shadow: inset 0 1px 0 rgba(255,255,255,.05);
+      }
+
+      .tab-pane-wrap{
+        border: 1px solid var(--border);
+        border-top: 0;
+        border-radius: 0 1rem 1rem 1rem;
+        background: rgba(255,255,255,.03);
+      }
+
+      .btn-outline-primary{
+        border-color: rgba(99,102,241,.55);
+        color: rgba(199, 210, 254, .95);
+      }
+      .btn-outline-primary:hover{
+        background: rgba(99,102,241,.16);
+        border-color: rgba(99,102,241,.8);
+      }
+
+      .badge-soft{
+        border: 1px solid var(--border);
+        background: rgba(255,255,255,.03);
+        color: var(--text);
+      }
+
+      .footer-note{
+        border-top: 1px solid var(--border);
+        color: rgba(156,163,175,.9);
+      }
+
+      .form-select, .form-control{
+        background-color: rgba(255,255,255,.03);
+        border: 1px solid var(--border);
+        color: var(--text);
+      }
+      .form-select:focus, .form-control:focus{
+        border-color: rgba(99,102,241,.55);
+        box-shadow: 0 0 0 var(--bs-focus-ring-width) var(--bs-focus-ring-color);
+      }
+
+      /* Keep focus styling sane */
+      a:focus-visible,
+      button:focus-visible,
+      .btn:focus-visible,
+      .form-control:focus-visible,
+      .form-select:focus-visible,
+      [tabindex]:focus-visible{
+        outline: none !important;
+        box-shadow: 0 0 0 var(--bs-focus-ring-width) var(--bs-focus-ring-color) !important;
+        border-radius: .6rem;
+      }
+
+      .parlay-fab{
+        position: fixed;
+        right: 18px;
+        bottom: 18px;
+        z-index: 1050;
+        border-radius: 999px;
+        box-shadow: 0 14px 40px rgba(0,0,0,.45);
+      }
+      .parlay-count{
+        display:inline-flex;
+        align-items:center;
+        justify-content:center;
+        min-width: 22px;
+        height: 22px;
+        border-radius: 999px;
+        padding: 0 6px;
+        background: rgba(34,197,94,.18);
+        border: 1px solid rgba(34,197,94,.35);
+        color: #eafff3;
+        font-size: .75rem;
+        margin-left: .4rem;
+      }
+      .parlay-leg{
+        border: 1px solid var(--border);
+        background: rgba(255,255,255,.03);
+        border-radius: 12px;
+        padding: .75rem;
+      }
+      .parlay-mini{
+        font-size: .85rem;
+        color: rgba(229,231,235,.9);
+      }
+
+      .edge-pill{
+        border: 1px solid var(--border);
+        background: rgba(255,255,255,.03);
+        border-radius: 999px;
+        padding: .2rem .55rem;
+        font-size: .78rem;
+        color: rgba(229,231,235,.9);
+      }
+      .edge-good{
+        border-color: rgba(34,197,94,.35);
+        background: rgba(34,197,94,.10);
+      }
+      .edge-bad{
+        border-color: rgba(239,68,68,.35);
+        background: rgba(239,68,68,.10);
+      }
+      .edge-na{
+        border-color: var(--border);
+        background: rgba(255,255,255,.03);
+        color: rgba(156,163,175,.95);
+      }
+
+      /* --- FIX: remove Bootstrap table cell "grey outlines" --- */
+      .table{
+        --bs-table-bg: transparent;
+        --bs-table-border-color: transparent;
+      }
+      .table > :not(caption) > * > *{
+        border-bottom: 0 !important;
+        box-shadow: none !important;
+      }
+      .table tbody tr{
+        border-top: 1px solid var(--border);
+      }
+      .table tbody tr:first-child{
+        border-top: 0;
+      }
+    </style>
+
+    {% block head %}{% endblock %}
+  </head>
+
+  <body>
+    <nav class="navbar navbar-expand">
+      <div class="container shell py-2">
+        <a class="navbar-brand fw-semibold text-decoration-none" href="{{ url_for('main') }}">
+          <span class="brand-dot"></span>Odds Insight
+        </a>
+
+        <div class="ms-auto d-flex gap-2 align-items-center">
+          <span class="pill">NBA + NFL</span>
+
+          {% if current_user.is_authenticated %}
+            <span class="pill">👤 {{ current_user.username }}</span>
+            <span class="pill" id="coinsPill">💰 {{ current_user.balance }} coins</span>
+            <a class="btn btn-sm btn-outline-light" href="{{ url_for('logout') }}">Logout</a>
+          {% else %}
+            <a class="btn btn-sm btn-outline-light" href="{{ url_for('login', next=request.full_path) }}">Login</a>
+            <a class="btn btn-sm btn-outline-primary" href="{{ url_for('signup') }}">Sign up</a>
+          {% endif %}
+        </div>
+      </div>
+    </nav>
+
+    <main class="container shell my-4">
+      {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+          <div class="mb-3">
+            {% for category, msg in messages %}
+              <div class="alert alert-{{ category }} mb-2">{{ msg }}</div>
+            {% endfor %}
+          </div>
+        {% endif %}
+      {% endwith %}
+
+      {% block content %}{% endblock %}
+
+      <div class="mt-5 pt-3 footer-note small">
+        Informational only — not betting advice. Please gamble responsibly.
+      </div>
+    </main>
+
+    <!-- Parlay FAB -->
+    <button class="btn btn-outline-primary parlay-fab"
+            type="button"
+            data-bs-toggle="offcanvas"
+            data-bs-target="#parlayDrawer"
+            aria-controls="parlayDrawer">
+      🧾 Parlay <span id="parlayCount" class="parlay-count">0</span>
+    </button>
+
+    <!-- Parlay Drawer -->
+    <div class="offcanvas offcanvas-end text-bg-dark"
+         tabindex="-1"
+         id="parlayDrawer"
+         aria-labelledby="parlayDrawerLabel"
+         style="border-left:1px solid var(--border); width: 410px;">
+      <div class="offcanvas-header" style="border-bottom:1px solid var(--border);">
+        <div>
+          <h5 class="offcanvas-title" id="parlayDrawerLabel">Parlay Builder</h5>
+          <div class="subtle small">Picks persist as you browse</div>
+        </div>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="offcanvas" aria-label="Close"></button>
+      </div>
+
+      <div class="offcanvas-body d-flex flex-column gap-3">
+        <div id="parlayLegs" class="d-flex flex-column gap-2"></div>
+
+        <div class="card">
+          <div class="card-body p-3">
+            <div class="d-flex justify-content-between align-items-center">
+              <div class="subtle small">Stake (coins)</div>
+              <div class="d-flex align-items-center gap-2">
+                <input id="parlayStake" class="form-control form-control-sm" style="width: 120px;" value="10" />
+              </div>
+            </div>
+
+            <hr style="border-color: var(--border);" />
+
+            <div class="d-flex justify-content-between">
+              <div class="subtle small">Parlay odds (decimal)</div>
+              <div class="fw-semibold" id="parlayDecimal">—</div>
+            </div>
+
+            <div class="d-flex justify-content-between mt-1">
+              <div class="subtle small">Parlay odds (american)</div>
+              <div class="fw-semibold" id="parlayAmerican">—</div>
+            </div>
+
+            <div class="d-flex justify-content-between mt-1">
+              <div class="subtle small">Estimated hit chance</div>
+              <div class="fw-semibold" id="parlayChance">—</div>
+            </div>
+
+            <div class="d-flex justify-content-between mt-1">
+              <div class="subtle small">Model edge vs implied</div>
+              <div class="fw-semibold" id="parlayEdge">N/A</div>
+            </div>
+
+            <div class="d-flex justify-content-between mt-2">
+              <div class="subtle small">Potential payout (coins)</div>
+              <div class="fw-semibold" id="parlayPayout">—</div>
+            </div>
+
+            <div class="subtle small mt-2">
+              Chance uses model p when available; otherwise implied p. Edge requires model p for every leg.
+            </div>
+          </div>
+        </div>
+
+        <div class="d-flex gap-2">
+          <button id="parlayClear" type="button" class="btn btn-sm btn-outline-light w-50">Clear</button>
+          <button id="parlayCopy" type="button" class="btn btn-sm btn-outline-primary w-50">Copy summary</button>
+        </div>
+
+        <button id="parlayPlace" type="button" class="btn btn-sm btn-success w-100">
+          Place parlay
+        </button>
+
+        <div id="parlayMsg" class="subtle small"></div>
+      </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+
+    <script>
+      const PARLAY_KEY = "oddsinsight_parlay_v1";
+
+      function safeJsonParse(s, fallback){ try { return JSON.parse(s); } catch { return fallback; } }
+      function loadParlay(){ return safeJsonParse(localStorage.getItem(PARLAY_KEY) || "[]", []); }
+      function saveParlay(legs){ localStorage.setItem(PARLAY_KEY, JSON.stringify(legs)); }
+
+      function escapeHtml(s){
+        return String(s ?? "").replace(/[&<>"']/g, c => ({
+          "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"
+        }[c]));
+      }
+
+      function parseAmerican(x){
+        if(x == null) return null;
+        if(typeof x === "number") return Number.isFinite(x) ? x : null;
+        const s = String(x).trim();
+        if(!s) return null;
+        const cleaned = s.replace(/[^\d+\-\.]/g, "");
+        const n = Number(cleaned);
+        return Number.isFinite(n) && n !== 0 ? n : null;
+      }
+      function parseProb(x){
+        if(x == null) return null;
+        const n = Number(x);
+        return Number.isFinite(n) ? n : null;
+      }
+
+      function americanToDecimal(american){
+        const a = parseAmerican(american);
+        if(a == null) return null;
+        if(a > 0) return 1 + (a / 100);
+        return 1 + (100 / Math.abs(a));
+      }
+
+      function decimalToAmerican(dec){
+        const d = Number(dec);
+        if(!Number.isFinite(d) || d <= 1) return null;
+        if(d >= 2) return Math.round((d - 1) * 100);
+        return -Math.round(100 / (d - 1));
+      }
+
+      function impliedProbFromAmerican(american){
+        const a = parseAmerican(american);
+        if(a == null) return null;
+        if(a > 0) return 100 / (a + 100);
+        return Math.abs(a) / (Math.abs(a) + 100);
+      }
+
+      function fmtMoney(x){
+        const n = Number(x);
+        if(!Number.isFinite(n)) return "—";
+        return Math.floor(n).toString();
+      }
+      function fmtPct(x){
+        const n = Number(x);
+        if(!Number.isFinite(n)) return "—";
+        return (n * 100).toFixed(1) + "%";
+      }
+      function fmtEdge(x){
+        const n = Number(x);
+        if(!Number.isFinite(n)) return "N/A";
+        const sign = (n >= 0) ? "+" : "";
+        return sign + (n * 100).toFixed(1) + "%";
+      }
+      function edgeClass(edge){
+        const e = Number(edge);
+        if(!Number.isFinite(e)) return "edge-pill edge-na";
+        if(e >= 0.02) return "edge-pill edge-good";
+        if(e <= -0.02) return "edge-pill edge-bad";
+        return "edge-pill";
+      }
+
+      function updateCount(legs){
+        const el = document.getElementById("parlayCount");
+        if(el) el.textContent = String(legs.length);
+      }
+
+      async function hydrateLegIfNeeded(leg){
+        try{
+          const hasModel = (leg.p_model != null && Number.isFinite(parseProb(leg.p_model)));
+          if(hasModel) return leg;
+
+          if(!leg.event_id || !leg.market || !leg.selection) return leg;
+
+          const qs = new URLSearchParams({
+            event_id: String(leg.event_id),
+            market: String(leg.market),
+            selection: String(leg.selection),
+          });
+
+          const r = await fetch(`/api/leg?${qs.toString()}`, { cache: "no-store" });
+          if(!r.ok) return leg;
+
+          const j = await r.json();
+          if(j && j.leg){
+            return { ...leg, ...j.leg };
+          }
+          return leg;
+        }catch{
+          return leg;
+        }
+      }
+
+      function computeParlay(legs){
+        let dec = 1;
+        let prob_used = 1;
+
+        let prob_model_all = 1;
+        let prob_implied_all = 1;
+        let edge_possible = true;
+
+        for(const leg of legs){
+          const d = americanToDecimal(leg.american);
+          if(d == null) return { dec: null, prob_used: null, edge: null };
+
+          const pI = impliedProbFromAmerican(leg.american);
+          if(pI == null) return { dec: null, prob_used: null, edge: null };
+
+          const pM = (leg.p_model != null) ? parseProb(leg.p_model) : null;
+
+          dec *= d;
+
+          const pUsed = (pM != null && Number.isFinite(pM)) ? pM : pI;
+          prob_used *= pUsed;
+
+          if(pM != null && Number.isFinite(pM)){
+            prob_model_all *= pM;
+            prob_implied_all *= pI;
+          }else{
+            edge_possible = false;
+          }
+        }
+
+        const edge = edge_possible ? (prob_model_all - prob_implied_all) : null;
+        return { dec, prob_used, edge };
+      }
+
+      async function renderParlay(){
+        let legs = loadParlay();
+        updateCount(legs);
+
+        const hydrated = [];
+        for(const leg of legs){
+          hydrated.push(await hydrateLegIfNeeded(leg));
+        }
+        legs = hydrated;
+        saveParlay(legs);
+
+        const legsBox = document.getElementById("parlayLegs");
+        if(!legsBox) return;
+
+        if(legs.length === 0){
+          legsBox.innerHTML = `<div class="subtle">No picks yet. Click <b>+</b> on any line.</div>`;
+        }else{
+          legsBox.innerHTML = legs.map((leg, idx) => {
+            const pI = impliedProbFromAmerican(leg.american);
+            const pM = (leg.p_model != null) ? parseProb(leg.p_model) : null;
+
+            const hasModel = (pM != null && Number.isFinite(pM));
+            const hasImplied = (pI != null && Number.isFinite(pI));
+            const edge = (hasModel && hasImplied) ? (pM - pI) : null;
+
+            const modelText = hasModel ? fmtPct(pM) : "N/A";
+            const impliedText = hasImplied ? fmtPct(pI) : "N/A";
+            const edgeText = (edge == null) ? "N/A" : fmtEdge(edge);
+
+            return `
+              <div class="parlay-leg">
+                <div class="d-flex justify-content-between align-items-start gap-2">
+                  <div>
+                    <div class="fw-semibold">${escapeHtml(leg.label)}</div>
+                    <div class="parlay-mini subtle">
+                      ${escapeHtml(leg.league)} • ${escapeHtml(leg.market)}
+                      <span class="mx-1">•</span>
+                      <span class="fw-semibold">${escapeHtml(leg.displayOdds ?? String(leg.american ?? "—"))}</span>
+                    </div>
+                    <div class="subtle small">${escapeHtml(leg.matchup)}</div>
+
+                    <div class="d-flex flex-wrap gap-2 mt-2">
+                      <span class="edge-pill">Model p: <span class="fw-semibold">${escapeHtml(modelText)}</span></span>
+                      <span class="edge-pill">Implied p: <span class="fw-semibold">${escapeHtml(impliedText)}</span></span>
+                      <span class="${edgeClass(edge)}">Edge: <span class="fw-semibold">${escapeHtml(edgeText)}</span></span>
+                    </div>
+                  </div>
+                  <button type="button" class="btn btn-sm btn-outline-light" data-parlay-remove="${idx}">✕</button>
+                </div>
+              </div>
+            `;
+          }).join("");
+        }
+
+        legsBox.querySelectorAll("[data-parlay-remove]").forEach(btn => {
+          btn.addEventListener("click", (e) => {
+            const i = Number(e.currentTarget.getAttribute("data-parlay-remove"));
+            const cur = loadParlay();
+            cur.splice(i, 1);
+            saveParlay(cur);
+            renderParlay();
+          });
+        });
+
+        const stakeEl = document.getElementById("parlayStake");
+        const stake = Number(stakeEl?.value ?? 10);
+
+        const { dec, prob_used, edge } = computeParlay(legs);
+
+        const decEl = document.getElementById("parlayDecimal");
+        const amEl  = document.getElementById("parlayAmerican");
+        const chEl  = document.getElementById("parlayChance");
+        const edEl  = document.getElementById("parlayEdge");
+        const payEl = document.getElementById("parlayPayout");
+
+        if(legs.length === 0 || dec == null || prob_used == null){
+          decEl.textContent = "—";
+          amEl.textContent  = "—";
+          chEl.textContent  = "—";
+          edEl.textContent  = "N/A";
+          payEl.textContent = "—";
+          return;
+        }
+
+        decEl.textContent = dec.toFixed(3);
+        const am = decimalToAmerican(dec);
+        amEl.textContent = (am == null) ? "—" : ((am > 0 ? "+" : "") + String(am));
+        chEl.textContent = fmtPct(prob_used);
+        edEl.textContent = (edge == null) ? "N/A" : fmtEdge(edge);
+
+        if(Number.isFinite(stake) && stake > 0){
+          payEl.textContent = fmtMoney(stake * dec);
+        }else{
+          payEl.textContent = "—";
+        }
+      }
+
+      // Public API used by your buttons
+      window.addToParlay = async function(leg){
+        if (window.event) { try { window.event.preventDefault(); window.event.stopPropagation(); } catch {} }
+
+        const normalized = {
+          ...leg,
+          american: parseAmerican(leg.american ?? leg.displayOdds),
+          p_model: parseProb(leg.p_model),
+        };
+
+        const hydrated = await hydrateLegIfNeeded(normalized);
+
+        const legs = loadParlay();
+        const key = `${hydrated.event_id}::${hydrated.market}::${hydrated.selection}`;
+
+        if(!legs.some(x => x._key === key)){
+          legs.push({ ...hydrated, _key: key });
+          saveParlay(legs);
+        }
+        await renderParlay();
+
+        const drawerEl = document.getElementById("parlayDrawer");
+        const off = bootstrap.Offcanvas.getOrCreateInstance(drawerEl);
+        off.show();
+      };
+
+      document.getElementById("parlayClear").addEventListener("click", () => {
+        saveParlay([]);
+        renderParlay();
+        const m = document.getElementById("parlayMsg");
+        if(m) m.textContent = "";
+      });
+
+      document.getElementById("parlayCopy").addEventListener("click", () => {
+        const legs = loadParlay();
+        const { dec, prob_used, edge } = computeParlay(legs);
+        const stake = Number(document.getElementById("parlayStake")?.value ?? 10);
+        const am = (dec != null) ? decimalToAmerican(dec) : null;
+
+        const lines = [];
+        lines.push(`Parlay (${legs.length} legs)`);
+        legs.forEach((l, i) => lines.push(`${i+1}. ${l.label} (${l.market}) @ ${l.displayOdds ?? l.american}`));
+        if(dec != null) lines.push(`Decimal: ${dec.toFixed(3)}`);
+        if(am != null) lines.push(`American: ${(am>0?"+":"") + am}`);
+        if(prob_used != null) lines.push(`Est. hit chance: ${(prob_used*100).toFixed(1)}%`);
+        if(edge != null) lines.push(`Model edge vs implied: ${(edge*100).toFixed(1)}%`);
+        if(Number.isFinite(stake) && stake > 0 && dec != null) lines.push(`Payout on ${stake}: ${Math.floor(stake*dec)} coins`);
+        lines.push(`Informational only — not betting advice.`);
+
+        navigator.clipboard?.writeText(lines.join("\n")).catch(()=>{});
+      });
+
+      document.addEventListener("input", (e) => {
+        if(e.target && e.target.id === "parlayStake"){
+          renderParlay();
+        }
+      });
+
+      window.addEventListener("storage", (e) => {
+        if(e.key === PARLAY_KEY) renderParlay();
+      });
+
+      // Place parlay (spend coins) -> POST /api/parlays/place
+      document.getElementById("parlayPlace").addEventListener("click", async () => {
+        const msg = document.getElementById("parlayMsg");
+        const btn = document.getElementById("parlayPlace");
+        msg.textContent = "";
+
+        const legs = loadParlay();
+        const stake = Number(document.getElementById("parlayStake")?.value ?? 10);
+
+        if(!legs || legs.length < 2){
+          msg.textContent = "Need at least 2 legs.";
+          return;
+        }
+        if(!Number.isFinite(stake) || stake <= 0){
+          msg.textContent = "Invalid stake.";
+          return;
+        }
+
+        btn.disabled = true;
+        btn.textContent = "Placing…";
+
+        try{
+          const payloadLegs = legs.map(l => ({
+            event_id: l.event_id,
+            league: l.league,
+            market: l.market,
+            selection: l.selection,
+            label: l.label,
+            matchup: l.matchup,
+            american: l.american,
+            point: (l.point ?? null),
+          }));
+
+          const r = await fetch("/api/parlays/place", {
+            method: "POST",
+            headers: {"Content-Type":"application/json"},
+            body: JSON.stringify({ stake: Math.floor(stake), legs: payloadLegs })
+          });
+
+          const j = await r.json().catch(()=> ({}));
+
+          if(r.status === 401){
+            msg.textContent = "Login required to place parlays.";
+            return;
+          }
+
+          if(!r.ok || !j.ok){
+            msg.textContent = j.error || "Failed to place parlay.";
+            return;
+          }
+
+          msg.textContent = `Placed! Parlay #${j.parlay_id}.`;
+
+          saveParlay([]);
+          await renderParlay();
+
+          // Update coins pill (prefer server response, fallback /api/me)
+          const pill = document.getElementById("coinsPill");
+          if(pill && j.new_balance != null){
+            pill.textContent = `💰 ${j.new_balance} coins`;
+          }else{
+            try{
+              const me = await fetch("/api/me", { cache: "no-store" }).then(x => x.json());
+              if(me && me.authenticated){
+                if(pill) pill.textContent = `💰 ${me.balance} coins`;
+              }
+            }catch{}
+          }
+
+          // Let main page refresh "My Parlays" if it exists
+          if(typeof window.refreshMyParlays === "function"){
+            try{ await window.refreshMyParlays(); }catch{}
+          }
+
+        }catch{
+          msg.textContent = "Network error placing parlay.";
+        }finally{
+          btn.disabled = false;
+          btn.textContent = "Place parlay";
+        }
+      });
+
+      renderParlay();
+    </script>
+
+    {% block scripts %}{% endblock %}
+  </body>
+</html>

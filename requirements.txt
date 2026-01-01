@@ -1,0 +1,27 @@
+Flask==3.0.3
+gunicorn
+
+pandas>=2.2.0
+numpy>=1.26.0
+
+psycopg2-binary>=2.9.9
+requests==2.32.3
+python-dotenv==1.0.1
+
+scikit-learn>=1.4.0
+joblib>=1.3.0
+
+# NEW (accounts + coins + DB)
+Flask-SQLAlchemy>=3.1.1
+SQLAlchemy>=2.0.30
+psycopg2-binary>=2.9.9
+
+# NEW (login/auth)
+Flask-Login>=0.6.3
+Werkzeug>=3.0.3
+
+# NEW (timer / background settlement)
+APScheduler>=3.10.4
+
+# NEW (timezone support on older Pythons / some platforms)
+tzdata>=2024.1

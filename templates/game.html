@@ -1,0 +1,399 @@
+{% extends "base.html" %}
+
+{% block head %}
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+{% endblock %}
+
+{% block content %}
+  <div class="d-flex justify-content-between align-items-start gap-3 mb-3">
+    <div>
+      <div class="subtle small">{{ g.league }} • {{ g.commence_local_str }}</div>
+      <h1 class="h4 mb-1">{{ g.away_team }} <span class="subtle">@</span> {{ g.home_team }}</h1>
+      <div class="subtle small">Event ID: {{ g.event_id }}</div>
+    </div>
+    <div class="d-flex gap-2">
+      <a class="btn btn-sm btn-outline-light" href="{{ url_for('main') }}">← Back</a>
+    </div>
+  </div>
+
+  <div class="row g-3">
+
+    <!-- Odds -->
+    <div class="col-12 col-lg-6">
+      <div class="card h-100">
+        <div class="card-body p-4">
+          <h2 class="h6 mb-3">Odds</h2>
+
+          <div class="table-responsive">
+            <table class="table table-sm align-middle mb-0">
+              <thead class="subtle">
+                <tr>
+                  <th style="width: 28%;">Market</th>
+                  <th>{{ g.home_team }}</th>
+                  <th>{{ g.away_team }}</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td class="subtle">Moneyline (best)</td>
+                  <td class="fw-semibold">{{ g.home_ml_best }}</td>
+                  <td class="fw-semibold">{{ g.away_ml_best }}</td>
+                </tr>
+                <tr>
+                  <td class="subtle">Spread</td>
+                  <td class="fw-semibold">
+                    {{ g.spread_home_point }}
+                    <span class="subtle">({{ g.spread_home_price_best }})</span>
+                  </td>
+                  <td class="fw-semibold">
+                    {{ g.spread_away_point }}
+                    <span class="subtle">({{ g.spread_away_price_best }})</span>
+                  </td>
+                </tr>
+                <tr>
+                  <td class="subtle">Total</td>
+                  <td colspan="2" class="fw-semibold">
+                    {{ g.total_points }}
+                    <span class="subtle ms-2">
+                      Over {{ g.total_over_price_best }} / Under {{ g.total_under_price_best }}
+                    </span>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <hr class="my-3" />
+
+          <h3 class="h6 mb-2">Win probability (devig)</h3>
+          {% if home_prob is none or away_prob is none %}
+            <div class="subtle">Not enough data to compute probability.</div>
+          {% else %}
+            <canvas id="probChart" height="130"></canvas>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+
+    <!-- Team metrics -->
+    <div class="col-12 col-lg-6">
+      <div class="card h-100">
+        <div class="card-body p-4">
+          <h2 class="h6 mb-3">Team metrics</h2>
+
+          <div class="row g-3">
+            <div class="col-12 col-md-6">
+              <div class="pill d-inline-block mb-2">{{ g.home_team }}</div>
+              <div class="subtle small">W–L: {{ g.home_wins }} – {{ g.home_losses }}</div>
+              <div class="subtle small">Win%: {{ g.home_winPercent }}</div>
+              <div class="subtle small">Streak: {{ g.home_streak }}</div>
+              <div class="subtle small">PF/PA: {{ g.home_pointsFor }} / {{ g.home_pointsAgainst }}</div>
+              {% if g.league == "NBA" %}
+                <div class="subtle small">PPG / OPP: {{ g.home_ppg }} / {{ g.home_opp_ppg }}</div>
+                <div class="subtle small">Avg diff: {{ g.home_avg_diff }}</div>
+              {% endif %}
+            </div>
+
+            <div class="col-12 col-md-6">
+              <div class="pill d-inline-block mb-2">{{ g.away_team }}</div>
+              <div class="subtle small">W–L: {{ g.away_wins }} – {{ g.away_losses }}</div>
+              <div class="subtle small">Win%: {{ g.away_winPercent }}</div>
+              <div class="subtle small">Streak: {{ g.away_streak }}</div>
+              <div class="subtle small">PF/PA: {{ g.away_pointsFor }} / {{ g.away_pointsAgainst }}</div>
+              {% if g.league == "NBA" %}
+                <div class="subtle small">PPG / OPP: {{ g.away_ppg }} / {{ g.away_opp_ppg }}</div>
+                <div class="subtle small">Avg diff: {{ g.away_avg_diff }}</div>
+              {% endif %}
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+
+    <!-- Team trends -->
+    <div class="col-12">
+      <div class="card">
+        <div class="card-body p-4">
+          <div class="d-flex flex-wrap justify-content-between align-items-center gap-2">
+            <div>
+              <h2 class="h6 mb-0">Team trends</h2>
+              <div class="subtle small">Choose a time span + metrics (home vs away)</div>
+              <div class="subtle small mt-1" id="trendStatus"></div>
+            </div>
+
+            <div class="d-flex flex-wrap gap-2 align-items-end">
+              <div>
+                <label class="form-label small mb-1" for="spanSelect">Span</label>
+                <select class="form-select form-select-sm" id="spanSelect">
+                  {% for d in span_choices %}
+                    <option value="{{ d }}" {% if d == span_days %}selected{% endif %}>
+                      {% if d == 7 %}1 week{% elif d == 30 %}1 month{% elif d == 180 %}6 months{% elif d == 365 %}1 year{% elif d == 730 %}2 years{% else %}{{ d }} days{% endif %}
+                    </option>
+                  {% endfor %}
+                </select>
+              </div>
+
+              <div>
+                <label class="form-label small mb-1" for="metricA">Chart A</label>
+                <select class="form-select form-select-sm" id="metricA">
+                  {% for k, meta in metrics.items() %}
+                    <option value="{{ k }}" {% if k == metric_a %}selected{% endif %}>{{ meta.label }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+
+              <div>
+                <label class="form-label small mb-1" for="metricB">Chart B</label>
+                <select class="form-select form-select-sm" id="metricB">
+                  {% for k, meta in metrics.items() %}
+                    <option value="{{ k }}" {% if k == metric_b %}selected{% endif %}>{{ meta.label }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <div class="row g-3 mt-2">
+            <div class="col-12 col-lg-6">
+              <canvas id="trendA" height="170"></canvas>
+            </div>
+            <div class="col-12 col-lg-6">
+              <canvas id="trendB" height="170"></canvas>
+            </div>
+          </div>
+
+          <div class="subtle small mt-3">
+            Note: these trends are based on completed games (team performance), not odds history.
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Bet quality -->
+    <div class="col-12">
+      <div class="card">
+        <div class="card-body p-4">
+          <div class="d-flex justify-content-between align-items-start gap-3">
+            <div>
+              <h2 class="h6 mb-1">Bet quality overview</h2>
+              <div class="subtle small">Model probability vs market implied probability (edge). Informational only.</div>
+            </div>
+            <button id="refreshBetQuality" class="btn btn-sm btn-outline-light" type="button">Refresh</button>
+          </div>
+
+          <div class="table-responsive mt-3">
+            <table class="table table-sm align-middle mb-0">
+              <thead class="subtle">
+                <tr>
+                  <th style="width: 38%;">Leg</th>
+                  <th style="width: 12%;">Odds</th>
+                  <th style="width: 14%;">Model</th>
+                  <th style="width: 14%;">Market</th>
+                  <th style="width: 10%;">Edge</th>
+                  <th style="width: 12%;">Add</th>
+                </tr>
+              </thead>
+              <tbody id="betQualityBody">
+                <tr><td colspan="6" class="subtle">Loading…</td></tr>
+              </tbody>
+            </table>
+          </div>
+
+          <div class="subtle small mt-3">
+            Edge is simply (model probability − market implied probability). Not a guarantee.
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  const EVENT_ID = {{ g.event_id|tojson }};
+  const HOME_TEAM = {{ g.home_team|tojson }};
+  const AWAY_TEAM = {{ g.away_team|tojson }};
+
+  function setTrendStatus(msg){
+    const el = document.getElementById("trendStatus");
+    if(el) el.textContent = msg || "";
+  }
+
+  {% if home_prob is not none and away_prob is not none %}
+  new Chart(document.getElementById("probChart"), {
+    type: "bar",
+    data: {
+      labels: [HOME_TEAM, AWAY_TEAM],
+      datasets: [{ label: "Win probability", data: [{{ home_prob|tojson }}, {{ away_prob|tojson }}] }]
+    },
+    options: {
+      responsive: true,
+      plugins: { legend: { display: false } },
+      scales: {
+        y: { min: 0, max: 1, ticks: { callback: v => (v*100).toFixed(0) + "%" } }
+      }
+    }
+  });
+  {% endif %}
+
+  function applyAxisOptions(chart, kind){
+    const y = chart.options.scales.y || (chart.options.scales.y = {});
+    const ticks = y.ticks || (y.ticks = {});
+    y.min = undefined;
+    y.max = undefined;
+    ticks.callback = undefined;
+
+    if(kind === "pct"){
+      y.min = 0;
+      y.max = 1;
+      ticks.callback = (v) => (v * 100).toFixed(0) + "%";
+    }
+  }
+
+  async function fetchTrends(metric, span){
+    const url = `/api/game/${encodeURIComponent(EVENT_ID)}/trends?metric=${encodeURIComponent(metric)}&span=${encodeURIComponent(span)}`;
+    const r = await fetch(url, { cache: "no-store" });
+    if(!r.ok) throw new Error(await r.text());
+    const j = await r.json();
+    if(j && j.ok === false) throw new Error(j.error || "api_error");
+    return j;
+  }
+
+  const initA = { labels: {{ labels_a|tojson }}, home: {{ home_a|tojson }}, away: {{ away_a|tojson }}, kind: {{ kind_a|tojson }} };
+  const initB = { labels: {{ labels_b|tojson }}, home: {{ home_b|tojson }}, away: {{ away_b|tojson }}, kind: {{ kind_b|tojson }} };
+
+  const chartA = new Chart(document.getElementById("trendA"), {
+    type: "line",
+    data: {
+      labels: initA.labels,
+      datasets: [
+        { label: HOME_TEAM, data: initA.home, tension: 0.25, spanGaps: true },
+        { label: AWAY_TEAM, data: initA.away, tension: 0.25, spanGaps: true }
+      ]
+    },
+    options: { responsive: true, interaction: { mode: "index", intersect: false }, plugins: { legend: { display: true } }, scales: { y: {} } }
+  });
+  applyAxisOptions(chartA, initA.kind);
+
+  const chartB = new Chart(document.getElementById("trendB"), {
+    type: "line",
+    data: {
+      labels: initB.labels,
+      datasets: [
+        { label: HOME_TEAM, data: initB.home, tension: 0.25, spanGaps: true },
+        { label: AWAY_TEAM, data: initB.away, tension: 0.25, spanGaps: true }
+      ]
+    },
+    options: { responsive: true, interaction: { mode: "index", intersect: false }, plugins: { legend: { display: true } }, scales: { y: {} } }
+  });
+  applyAxisOptions(chartB, initB.kind);
+
+  let _t = null;
+  function scheduleRefresh(){
+    if(_t) clearTimeout(_t);
+    _t = setTimeout(() => refreshCharts().catch(e => {
+      console.error(e);
+      setTrendStatus("Failed to update trends.");
+    }), 75);
+  }
+
+  async function refreshCharts(){
+    const span = document.getElementById("spanSelect").value;
+    const metricA = document.getElementById("metricA").value;
+    const metricB = document.getElementById("metricB").value;
+
+    setTrendStatus("Updating…");
+
+    const [a, b] = await Promise.all([fetchTrends(metricA, span), fetchTrends(metricB, span)]);
+
+    chartA.data.labels = a.labels || [];
+    chartA.data.datasets[0].data = a.home || [];
+    chartA.data.datasets[1].data = a.away || [];
+    applyAxisOptions(chartA, a.kind);
+    chartA.update();
+
+    chartB.data.labels = b.labels || [];
+    chartB.data.datasets[0].data = b.home || [];
+    chartB.data.datasets[1].data = b.away || [];
+    applyAxisOptions(chartB, b.kind);
+    chartB.update();
+
+    setTrendStatus(`Updated • span ${span}d`);
+  }
+
+  document.getElementById("spanSelect").addEventListener("change", scheduleRefresh);
+  document.getElementById("metricA").addEventListener("change", scheduleRefresh);
+  document.getElementById("metricB").addEventListener("change", scheduleRefresh);
+
+  function escapeHtml(s){
+    return String(s ?? "").replace(/[&<>"']/g, c => ({
+      "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"
+    }[c]));
+  }
+  function pct(x){
+    const n = Number(x);
+    return (!Number.isFinite(n)) ? "—" : (n * 100).toFixed(1) + "%";
+  }
+
+  async function loadBetQuality(){
+    const tbody = document.getElementById("betQualityBody");
+    tbody.innerHTML = `<tr><td colspan="6" class="subtle">Loading…</td></tr>`;
+
+    try{
+      const r = await fetch(`/api/game/${encodeURIComponent(EVENT_ID)}/bet_quality`, { cache: "no-store" });
+      const data = await r.json();
+      const legs = data.legs || [];
+
+      if(!legs.length){
+        tbody.innerHTML = `<tr><td colspan="6" class="subtle">No model data available.</td></tr>`;
+        return;
+      }
+
+      tbody.innerHTML = legs.map(l => {
+        const edgeText = (l.edge == null) ? "N/A" : pct(l.edge);
+
+        const payload = {
+          event_id: String(l.event_id),
+          league: l.league,
+          matchup: l.matchup,
+          market: l.market,
+          selection: l.selection,
+          label: l.label,
+          american: l.american,
+          displayOdds: l.displayOdds,
+          p_model: l.p_model,
+          point: (l.point ?? null),
+        };
+
+        return `
+          <tr>
+            <td>
+              <div class="fw-semibold">${escapeHtml(l.label)}</div>
+              <div class="subtle small">${escapeHtml(l.market)}</div>
+            </td>
+            <td class="fw-semibold">${escapeHtml(l.displayOdds)}</td>
+            <td>${pct(l.p_model)}</td>
+            <td>${pct(l.p_market)}</td>
+            <td class="fw-semibold">${edgeText}</td>
+            <td>
+              <button class="btn btn-sm btn-outline-primary"
+                onclick='event.preventDefault(); event.stopPropagation(); addToParlay(${JSON.stringify(payload)}); return false;'>
+                Add
+              </button>
+            </td>
+          </tr>
+        `;
+      }).join("");
+
+    }catch(e){
+      console.error("loadBetQuality error:", e);
+      tbody.innerHTML = `<tr><td colspan="6" class="subtle">Failed to load bet quality.</td></tr>`;
+    }
+  }
+
+  document.getElementById("refreshBetQuality").addEventListener("click", loadBetQuality);
+  loadBetQuality();
+</script>
+{% endblock %}

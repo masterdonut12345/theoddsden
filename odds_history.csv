@@ -1,0 +1,22 @@
+ts_utc,league,event_id,home_team,away_team,home_ml_best,away_ml_best,spread_home_point,spread_home_price_best,spread_away_point,spread_away_price_best,total_points,total_over_price_best,total_under_price_best
+2025-12-17T05:35:07.314453+00:00,NBA,a9cbe798da439bd9d012976f7738591b,Chicago Bulls,Cleveland Cavaliers,180.0,-200.0,5.5,-101.0,-5.5,-110.0,243.5,-105.0,-110.0
+2025-12-17T05:35:07.314453+00:00,NBA,3dfcf87c4c788368e199e9d23b2c1831,Minnesota Timberwolves,Memphis Grizzlies,-280.0,255.0,-7.5,-108.0,7.5,-104.0,232.5,-107.0,-107.0
+2025-12-17T05:35:07.314453+00:00,NBA,ec6d61cb03f048a8ced4fa2bb3bb7b03,Brooklyn Nets,Miami Heat,210.0,-250.0,6.5,-110.0,-6.5,-110.0,227.5,-110.0,-110.0
+2025-12-17T05:35:07.314453+00:00,NBA,4cece5fd2474ad97c387333029d56ccf,New Orleans Pelicans,Houston Rockets,350.0,-425.0,9.5,-105.0,-9.5,-115.0,234.5,-110.0,-110.0
+2025-12-17T05:35:07.314453+00:00,NBA,e910fe9181a947bc12d92330014fa0b8,Utah Jazz,Los Angeles Lakers,200.0,-240.0,6.5,-110.0,-6.5,-110.0,241.5,-110.0,-105.0
+2025-12-17T05:35:07.314453+00:00,NFL,ac7881cc5a498c5b72680498d3fa8f6e,Seattle Seahawks,Los Angeles Rams,-105.0,-108.0,0.0,-103.0,0.0,-107.0,44.0,-105.0,-104.0
+2025-12-17T05:35:07.314453+00:00,NFL,18fe4528a0bc43d9cd64bd09c0d5019f,Washington Commanders,Philadelphia Eagles,250.0,-285.0,6.5,-107.0,-6.5,-103.0,44.5,-104.0,-110.0
+2025-12-17T05:35:07.314453+00:00,NFL,9f70d98bc6918dc8e21f329405b649fe,Chicago Bears,Green Bay Packers,-102.0,-108.0,1.0,-110.0,-1.0,100.0,46.5,-110.0,-102.0
+2025-12-17T05:35:07.314453+00:00,NFL,2557976e0e66ab698539b543de125469,Cleveland Browns,Buffalo Bills,480.0,-550.0,10.0,-101.0,-10.0,-109.0,42.0,-107.0,-107.0
+2025-12-17T05:35:07.314453+00:00,NFL,d056f31082bdea4d018a26ba274b8430,Carolina Panthers,Tampa Bay Buccaneers,142.0,-155.0,3.0,-110.0,-3.0,100.0,45.5,-104.0,-110.0
+2025-12-17T05:35:07.314453+00:00,NFL,945286798abb5081432aef109df29778,Miami Dolphins,Cincinnati Bengals,125.0,-134.0,2.5,-105.0,-2.5,-105.0,50.5,-107.0,-107.0
+2025-12-17T05:35:07.314453+00:00,NFL,aa9d0cf732b6adde4ad3ec04ca79825c,Dallas Cowboys,Los Angeles Chargers,-122.0,115.0,-1.0,-113.0,1.0,102.0,49.5,-107.0,-105.0
+2025-12-17T05:35:07.314453+00:00,NFL,0cce34b9a49c4c6bdc1e65449e37a0f9,Tennessee Titans,Kansas City Chiefs,164.0,-180.0,3.5,-114.0,-3.5,103.0,37.5,-107.0,-107.0
+2025-12-17T05:35:07.314453+00:00,NFL,3db6ba91d2a72ada8843d5a0517bff27,New York Giants,Minnesota Vikings,130.0,-145.0,3.0,-110.0,-3.0,105.0,43.5,-107.0,-105.0
+2025-12-17T05:35:07.314453+00:00,NFL,aa5b25e85d1ad6540d7a5ae04b73ddfd,New Orleans Saints,New York Jets,-210.0,186.0,-4.5,-105.0,4.5,-105.0,40.5,-108.0,-105.0
+2025-12-17T05:35:07.314453+00:00,NFL,7d71a0d3cc2a04eb35f1a725104217b5,Arizona Cardinals,Atlanta Falcons,130.0,-140.0,2.5,101.0,-2.5,-110.0,48.0,-104.0,-110.0
+2025-12-17T05:35:07.314453+00:00,NFL,93c002f0a42d1b57f3bbabdcfe24ab97,Denver Broncos,Jacksonville Jaguars,-160.0,150.0,-3.0,-110.0,3.0,100.0,45.5,-110.0,-110.0
+2025-12-17T05:35:07.314453+00:00,NFL,a03f89d3aaadf737deb09be24986d5bf,Detroit Lions,Pittsburgh Steelers,-320.0,275.0,-7.0,-103.0,7.0,-105.0,52.0,-110.0,-104.0
+2025-12-17T05:35:07.314453+00:00,NFL,47a54fb60f7b79179bc80e18a7c5de81,Houston Texans,Las Vegas Raiders,-1000.0,1000.0,-14.0,-105.0,14.0,-105.0,38.5,-104.0,-110.0
+2025-12-17T05:35:07.314453+00:00,NFL,a0476b027679a1670f21e8b75a860ab9,Baltimore Ravens,New England Patriots,-150.0,135.0,-3.0,100.0,3.0,-108.0,48.0,-109.0,-105.0
+2025-12-17T05:35:07.314453+00:00,NFL,2dd4521ee298fa2c6f0ab009c182aae9,Indianapolis Colts,San Francisco 49ers,245.0,-275.0,6.0,-105.0,-6.0,-105.0,46.5,-102.0,-105.0
